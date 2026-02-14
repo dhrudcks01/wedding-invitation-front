@@ -1,237 +1,249 @@
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import './App.css';
 import Guestbook from './Guestbook';
-import { FaPhoneAlt, FaRegCopy, FaMusic, FaPause, FaSubway, FaBus } from "react-icons/fa";
-import { IoMdClose } from "react-icons/io";
-import Intro from "./Intro.jsx";
+import Intro from './Intro';
+import AccountSection from './components/AccountSection';
+import FloatingControls from './components/FloatingControls';
+import FooterSection from './components/FooterSection';
+import GallerySection from './components/GallerySection';
+import GuideSection from './components/GuideSection';
+import HeroSection from './components/HeroSection';
+import InvitationSection from './components/InvitationSection';
+import LocationSection from './components/LocationSection';
+import RsvpSection from './components/RsvpSection';
+import ThemePicker from './components/ThemePicker';
+import {
+  ACCOUNTS,
+  CONTACTS,
+  FAQS,
+  GALLERY,
+  INITIAL_RSVP_FORM,
+  RSVP_STORAGE_KEY,
+  THEMES,
+  TIMELINE,
+  WEDDING_INFO,
+  loadRsvpEntries,
+} from './data/weddingData';
 
 function App() {
-    const [dDay, setDDay] = useState('');
-    const [openContact, setOpenContact] = useState(false);
-    const [openAccount, setOpenAccount] = useState(false);
-    const [isPlaying, setIsPlaying] = useState(false);
-    const audioRef = useRef(null);
-    const [introFinished, setIntroFinished] = useState(false);
+  const [dDay, setDDay] = useState('');
+  const [remainingTime, setRemainingTime] = useState('');
+  const [openContact, setOpenContact] = useState(false);
+  const [openAccount, setOpenAccount] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [introFinished, setIntroFinished] = useState(false);
+  const [hasBgm, setHasBgm] = useState(true);
+  const [theme, setTheme] = useState('warm');
+  const [openFaq, setOpenFaq] = useState(-1);
+  const [rsvpEntries, setRsvpEntries] = useState(() => loadRsvpEntries());
+  const [rsvpForm, setRsvpForm] = useState(INITIAL_RSVP_FORM);
+  const audioRef = useRef(null);
 
-    // 📅 예식일: 2026년 10월 9일 (금) 오후 3시
-    const weddingDateStr = '2026-10-09T15:00:00';
+  const weddingDate = useMemo(() => new Date(WEDDING_INFO.datetime), []);
 
-    useEffect(() => {
-        const calculateDDay = () => {
-            const today = new Date();
-            const wedding = new Date(weddingDateStr);
-            today.setHours(0,0,0,0);
-            wedding.setHours(0,0,0,0);
-            const diff = wedding.getTime() - today.getTime();
-            const diffDays = Math.ceil(diff / (1000 * 60 * 60 * 24));
+  useEffect(() => {
+    localStorage.setItem(RSVP_STORAGE_KEY, JSON.stringify(rsvpEntries));
+  }, [rsvpEntries]);
 
-            if (diffDays > 0) setDDay(`D-${diffDays}`);
-            else if (diffDays === 0) setDDay("D-Day! 축하해주세요!");
-            else setDDay(`D+${Math.abs(diffDays)}`);
-        };
-        calculateDDay();
+  useEffect(() => {
+    const calculateDDay = () => {
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const target = new Date(weddingDate.getFullYear(), weddingDate.getMonth(), weddingDate.getDate());
+      const diffDays = Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 
-        if (audioRef.current) { audioRef.current.volume = 0.3; }
-    }, []);
+      if (diffDays > 0) setDDay(`D-${diffDays}`);
+      else if (diffDays === 0) setDDay('D-Day');
+      else setDDay(`D+${Math.abs(diffDays)}`);
 
-    const toggleMusic = () => {
-        if (isPlaying) audioRef.current.pause();
-        else audioRef.current.play();
-        setIsPlaying(!isPlaying);
+      const diffMs = weddingDate.getTime() - now.getTime();
+      if (diffMs <= 0) {
+        setRemainingTime('예식이 시작되었습니다.');
+        return;
+      }
+
+      const totalSeconds = Math.floor(diffMs / 1000);
+      const days = Math.floor(totalSeconds / 86400);
+      const hours = Math.floor((totalSeconds % 86400) / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      setRemainingTime(`${days}일 ${hours}시간 ${minutes}분 남음`);
     };
 
-    const handleCopy = (text) => {
-        navigator.clipboard.writeText(text)
-            .then(() => alert(`'${text}' 복사되었습니다.`))
-            .catch(() => alert('복사에 실패했습니다.'));
+    calculateDDay();
+    const interval = setInterval(calculateDDay, 60000);
+
+    if (audioRef.current) {
+      audioRef.current.volume = 0.3;
+    }
+
+    return () => clearInterval(interval);
+  }, [weddingDate]);
+
+  const rsvpStats = useMemo(() => {
+    const attendingCount = rsvpEntries.filter((entry) => entry.attending === '참석').length;
+    const absentCount = rsvpEntries.filter((entry) => entry.attending === '불참').length;
+    const shuttleUsers = rsvpEntries.filter((entry) => entry.shuttle === '이용').length;
+
+    return { attendingCount, absentCount, shuttleUsers };
+  }, [rsvpEntries]);
+
+  const toggleMusic = async () => {
+    if (!audioRef.current || !hasBgm) return;
+
+    try {
+      if (isPlaying) {
+        audioRef.current.pause();
+        setIsPlaying(false);
+      } else {
+        await audioRef.current.play();
+        setIsPlaying(true);
+      }
+    } catch {
+      setHasBgm(false);
+    }
+  };
+
+  const handleCopy = async (text, label) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      alert(`${label} 복사되었습니다.`);
+    } catch {
+      alert('복사에 실패했습니다.');
+    }
+  };
+
+  const handleShare = async () => {
+    const shareData = {
+      title: `${WEDDING_INFO.groom} ♥ ${WEDDING_INFO.bride} 결혼식 초대장`,
+      text: `${WEDDING_INFO.displayDate} | ${WEDDING_INFO.venue}`,
+      url: window.location.href,
     };
 
-    return (
-        <>
+    if (navigator.share) {
+      try {
+        await navigator.share(shareData);
+        return;
+      } catch {
+        // 공유 취소/실패 시 링크 복사 fallback
+      }
+    }
 
-        {!introFinished && (
-            <Intro onComplete={() => setIntroFinished(true)} />
-        )}
+    handleCopy(window.location.href, '초대장 링크가');
+  };
 
-        <div className="container" style={{
-            // 인트로 중일 때는 스크롤 방지 & 높이 고정 (화면 흔들림 방지)
-            height: introFinished ? 'auto' : '100vh',
-            overflow: introFinished ? 'auto' : 'hidden'
-        }}>
-            <audio ref={audioRef} src="/bgm.mp3" loop />
-            <button className={`music-btn ${isPlaying ? 'playing' : ''}`} onClick={toggleMusic}>
-                {isPlaying ? <FaPause /> : <FaMusic />}
-            </button>
+  const openGoogleCalendar = () => {
+    const start = weddingDate.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+    const endDate = new Date(weddingDate.getTime() + 2 * 60 * 60 * 1000);
+    const end = endDate.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+    const text = encodeURIComponent(`${WEDDING_INFO.groom} ♥ ${WEDDING_INFO.bride} 결혼식`);
+    const details = encodeURIComponent('모바일 청첩장으로 초대드립니다.');
+    const location = encodeURIComponent(`${WEDDING_INFO.venue} ${WEDDING_INFO.address}`);
+    const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${text}&dates=${start}/${end}&details=${details}&location=${location}`;
 
-            {/* 1. 메인 섹션 */}
-            <div className="hero">
-                <img
-                    src="https://via.placeholder.com/400x500/e0d4c8/ffffff?text=WEDDING+PHOTO"
-                    alt="메인사진"
-                    className="main-photo"
-                />
-                <div className="names">
-                    오경찬 <span className="and">|</span> 유지연
-                </div>
-                <div className="date-info">
-                    2026년 10월 9일 금요일 오후 3시
-                    <br />
-                    충무로 라비두스 (Laviedouce)
-                </div>
-                <div className="d-day-badge">{dDay}</div>
-            </div>
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
 
-            <div className="divider"></div>
+  const handleRsvpSubmit = (event) => {
+    event.preventDefault();
+    const trimmedName = rsvpForm.name.trim();
 
-            {/* 2. 초대 문구 */}
-            <div className="section">
-                <div className="section-title">INVITATION</div>
-                <div className="poem">
-                    가을의 정취가 깊어가는 10월,<br/>
-                    도심 속 비밀의 정원 라비두스에서<br/>
-                    저희 두 사람 하나가 됩니다.<br/><br/>
-                    소중한 발걸음으로 축복해 주시면<br/>
-                    더없는 기쁨으로 간직하겠습니다.
-                </div>
-                <div className="accordion-wrapper">
-                    <button className="accordion-header" onClick={() => setOpenContact(!openContact)}>
-                        연락처 보기 {openContact ? <IoMdClose /> : <FaPhoneAlt style={{fontSize: '14px'}}/>}
-                    </button>
-                    {openContact && (
-                        <div className="accordion-content">
-                            <div className="contact-row">
-                                <span>신랑에게 연락하기</span>
-                                <a href="tel:01012345678"><FaPhoneAlt /></a>
-                            </div>
-                            <div className="contact-row">
-                                <span>신부에게 연락하기</span>
-                                <a href="tel:01098765432"><FaPhoneAlt /></a>
-                            </div>
-                        </div>
-                    )}
-                </div>
-            </div>
+    if (!trimmedName) {
+      alert('성함을 입력해주세요.');
+      return;
+    }
 
-            <div className="divider"></div>
+    const entry = {
+      id: Date.now(),
+      ...rsvpForm,
+      name: trimmedName,
+      companions: Number(rsvpForm.companions) || 1,
+      createdAt: new Date().toISOString(),
+    };
 
-            {/* 3. 오시는 길 (라비두스 정보 적용) */}
-            <div className="section">
-                <div className="section-title">LOCATION</div>
-                <h3 style={{marginBottom: '5px', fontSize: '18px', color: '#333'}}>라비두스</h3>
-                <p style={{fontSize: '14px', color: '#555', marginBottom: '20px', lineHeight: '1.6'}}>
-                    서울특별시 중구 필동로5길 7 (필동3가 62-15)<br/>
-                    Tel. 02-2265-7000
-                </p>
+    setRsvpEntries((prev) => [entry, ...prev]);
+    setRsvpForm(INITIAL_RSVP_FORM);
+    alert('참석 의사가 등록되었습니다. 감사합니다!');
+  };
 
-                {/* 약도 이미지 영역 */}
-                <div style={{marginTop: '10px'}}>
-                    {/* [중요] 약도 이미지는 라비두스 홈페이지에서 캡처해서
-                frontend/public/map.jpg 로 저장해주세요.
-             */}
-                    <img
-                        src="/laviedouce.jpg"
-                        alt="라비두스 약도"
-                        style={{width: '100%', borderRadius: '8px', border: '1px solid #eee'}}
-                        onError={(e) => {
-                            e.target.style.display='none'; // 이미지 없으면 숨김
-                        }}
-                    />
-                </div>
+  return (
+    <>
+      {!introFinished && <Intro onComplete={() => setIntroFinished(true)} />}
 
+      <div
+        className={`container theme-${theme}`}
+        style={{
+          height: introFinished ? 'auto' : '100vh',
+          overflow: introFinished ? 'auto' : 'hidden',
+        }}
+      >
+        <audio ref={audioRef} src="/bgm.mp3" loop onError={() => setHasBgm(false)} />
 
-                {/* 교통편 안내 (아이콘 포함) */}
-                <div style={{textAlign: 'left', marginTop: '25px', padding: '0 10px'}}>
-                    <div style={{marginBottom: '15px'}}>
-                        <div style={{fontWeight:'bold', color: '#8b7d6b', display:'flex', alignItems:'center', gap:'5px'}}>
-                            <FaSubway /> 지하철 안내
-                        </div>
-                        <ul style={{fontSize: '13px', color: '#444', paddingLeft: '20px', marginTop: '5px'}}>
-                            <li><strong>3, 4호선 충무로역</strong> 1번 출구 (도보 10분)</li>
-                            <li>1번 출구 앞 <strong>셔틀버스</strong> 운행</li>
-                        </ul>
-                    </div>
-                    <div>
-                        <div style={{fontWeight:'bold', color: '#8b7d6b', display:'flex', alignItems:'center', gap:'5px'}}>
-                            <FaBus /> 셔틀버스 안내
-                        </div>
-                        <p style={{fontSize: '13px', color: '#444', marginTop: '5px', paddingLeft: '5px'}}>
-                            예식 1시간 전부터 수시 운행<br/>
-                            (충무로역 1번 출구 대한극장 앞 탑승)
-                        </p>
-                    </div>
-                </div>
-                {/* 지도 버튼 3종 세트 */}
-                <div className="map-buttons">
-                    <a
-                        href="https://map.naver.com/p/search/충무로%20라비두스"
-                        target="_blank"
-                        rel="noreferrer"
-                        className="map-btn naver"
-                    >
-                        N 네이버 지도
-                    </a>
-                    <a
-                        href="https://map.kakao.com/link/search/충무로%20라비두스"
-                        target="_blank"
-                        rel="noreferrer"
-                        className="map-btn kakao"
-                    >
-                        K 카카오맵
-                    </a>
-                    <a
-                        href="https://www.google.com/maps/search/충무로+라비두스"
-                        target="_blank"
-                        rel="noreferrer"
-                        className="map-btn google"
-                    >
-                        G 구글 지도
-                    </a>
-                </div>
-
-            </div>
-
-            <div className="divider"></div>
-
-            {/* 4. 계좌번호 & 5. 방명록 (기존 동일) */}
-            <div className="section" style={{background: '#fafafa'}}>
-                <div className="section-title">ACCOUNT</div>
-                <p style={{fontSize: '14px', color: '#666', marginBottom: '20px'}}>
-                    참석이 어려우신 분들을 위해<br/>계좌번호를 안내해 드립니다.
-                </p>
-                <div className="accordion-wrapper" style={{background: 'white'}}>
-                    <button className="accordion-header" onClick={() => setOpenAccount(!openAccount)}>
-                        계좌번호 보기 {openAccount ? '접기' : '펼치기'}
-                    </button>
-                    {openAccount && (
-                        <div className="accordion-content">
-                            <div className="account-box">
-                                <div className="account-info">
-                                    <span className="bank">신한은행</span> 110-123-456789 <br/>(예금주: 오경찬)
-                                </div>
-                                <button className="copy-btn" onClick={() => handleCopy('110-123-456789')}>
-                                    <FaRegCopy /> 복사
-                                </button>
-                            </div>
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            <div className="divider"></div>
-
-            <div className="section">
-                <div className="section-title">GUESTBOOK</div>
-                <Guestbook />
-            </div>
-
-            <footer style={{background: '#333', color: '#fff', padding: '40px 20px', textAlign: 'center', fontSize: '11px', lineHeight: '1.6'}}>
-                <span style={{opacity: 0.7}}>The Wedding of</span><br/>
-                <span style={{fontSize: '14px'}}>Kyungchan & Bride</span><br/><br/>
-                2026.10.09. Laviedouce
-            </footer>
+        <div className="top-toolbar">
+          <ThemePicker themes={THEMES} currentTheme={theme} onChange={setTheme} />
+          <FloatingControls hasBgm={hasBgm} isPlaying={isPlaying} onToggleMusic={toggleMusic} onShare={handleShare} />
         </div>
-        </>
-    );
+
+        <HeroSection weddingInfo={WEDDING_INFO} dDay={dDay} remainingTime={remainingTime} />
+
+        <div className="divider" />
+
+        <InvitationSection
+          contacts={CONTACTS}
+          openContact={openContact}
+          onToggleContact={() => setOpenContact((prev) => !prev)}
+          onOpenCalendar={openGoogleCalendar}
+          onShare={handleShare}
+        />
+
+        <div className="divider" />
+
+        <RsvpSection
+          rsvpStats={rsvpStats}
+          rsvpForm={rsvpForm}
+          setRsvpForm={setRsvpForm}
+          onSubmit={handleRsvpSubmit}
+        />
+
+        <div className="divider" />
+
+        <GuideSection
+          timeline={TIMELINE}
+          faqs={FAQS}
+          openFaq={openFaq}
+          onToggleFaq={(index) => setOpenFaq((prev) => (prev === index ? -1 : index))}
+        />
+
+        <div className="divider" />
+
+        <GallerySection images={GALLERY} />
+
+        <div className="divider" />
+
+        <LocationSection
+          weddingInfo={WEDDING_INFO}
+          onCopyAddress={() => handleCopy(`${WEDDING_INFO.address} ${WEDDING_INFO.venue}`, '주소가')}
+        />
+
+        <div className="divider" />
+
+        <AccountSection
+          openAccount={openAccount}
+          onToggleAccount={() => setOpenAccount((prev) => !prev)}
+          accounts={ACCOUNTS}
+          onCopyAccount={(accountNumber) => handleCopy(accountNumber, '계좌번호가')}
+        />
+
+        <div className="divider" />
+
+        <section className="section">
+          <h2 className="section-title">GUESTBOOK</h2>
+          <Guestbook />
+        </section>
+
+        <FooterSection weddingInfo={WEDDING_INFO} />
+      </div>
+    </>
+  );
 }
 
 export default App;
